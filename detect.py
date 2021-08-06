@@ -10,7 +10,7 @@ signatures = json.loads(Path('signatures.json').read_text())
 print('Loaded signatures for', ', '.join(signatures.keys()))
 
 
-def detect_version(domain: str) -> Optional[str]:
+def detect_version(domain: str) -> dict[str, float]:
     if not domain.startswith('https'):
         domain = 'https://' + domain
     if not domain.endswith('/'):
@@ -36,11 +36,12 @@ def detect_version(domain: str) -> Optional[str]:
                 else:
                     signature[file] = md5(response.content).hexdigest()
 
-    print(domain)
+    result = {}
     for version, version_signature in signatures.items():
         common = len(set(signature.items()) & set(version_signature.items()))
-        closeness = common * 100 / len(version_signature)
-        print(f'{version} - {closeness:.2f}%')
+        closeness = common / len(version_signature)
+        result[version] = closeness
+    return result
 
 
 if __name__ == '__main__':
@@ -48,4 +49,7 @@ if __name__ == '__main__':
     parser.add_argument('domain')
     args = parser.parse_args()
 
-    detect_version(args.domain)
+    print(args.domain)
+    versions = detect_version(args.domain)
+    for version, likelihood in versions.items():
+        print(f'{version} - {likelihood*100:.2f}%')
