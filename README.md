@@ -20,7 +20,7 @@ This will generate "signatures" of those static files for each django version, a
 python generate_signatures.py
 ```
 
-`signatures.py` already contains some signatures for popular django versions.
+`signatures.json` already contains some signatures for popular django versions.
 
 ## Run
 
