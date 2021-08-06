@@ -26,14 +26,11 @@ def detect_version(domain: str) -> dict[str, float]:
             if file not in signature:
                 url = static_base + file
                 print('Fetching', url)
-                response = session.get(url, timeout=5)
-                if not response.ok:
-                    if response.status_code == 404:
-                        signature[file] = None
-                    else:
-                        response.raise_for_status()
-                else:
-                    signature[file] = md5(response.content).hexdigest()
+                try:
+                    response = session.get(url, timeout=5)
+                    signature[file] = md5(response.content).hexdigest() if response.ok else None
+                except Exception:
+                    signature[file] = None
 
     result = {}
     for version, version_signature in signatures.items():
