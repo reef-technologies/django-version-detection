@@ -2,6 +2,12 @@
 
 ## Preparations (may be skipped)
 
+Get all available django versions:
+
+```sh
+python get_django_versions.py
+```
+
 This will fetch popular django versions in `tmp` dir and extract static files for admin application:
 
 ```sh

@@ -23,7 +23,6 @@ def detect_version(domain: str) -> dict[str, float]:
     for version, hashes in signatures.items():
         print('Checking signatures for', version)
         for file in hashes.keys():
-
             if file not in signature:
                 url = static_base + file
                 print('Fetching', url)
@@ -40,7 +39,7 @@ def detect_version(domain: str) -> dict[str, float]:
     for version, version_signature in signatures.items():
         common = len(set(signature.items()) & set(version_signature.items()))
         closeness = common / len(version_signature)
-        result[version] = closeness
+        result[version] = round(closeness, 2)
     return result
 
 
