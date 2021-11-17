@@ -49,7 +49,7 @@ def detect_version(domain: str, static_path: str = 'static/admin/') -> dict[str,
 if __name__ == '__main__':
     parser = ArgumentParser()
     parser.add_argument('domain')
-    parser.add_argument('--static-path', type=str, default=None)
+    parser.add_argument('--static-path', type=str, default='static/admin/')
     args = parser.parse_args()
 
     print(args.domain)
