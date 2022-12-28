@@ -1,3 +1,4 @@
 requests
 tabulate
 natsort
+beautifulsoup4
