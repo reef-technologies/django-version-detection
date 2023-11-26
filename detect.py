@@ -13,6 +13,8 @@ signatures = json.loads(Path('signatures.json').read_text())
 
 
 def detect_version(domain: str, static_path: str = 'static/admin/') -> dict[str, float]:
+    assert signatures
+
     if not domain.startswith('https'):
         domain = 'https://' + domain
     if not domain.endswith('/'):
@@ -33,9 +35,10 @@ def detect_version(domain: str, static_path: str = 'static/admin/') -> dict[str,
                 continue
 
             url = static_path + file
-            log.debug('Fetching %s', url)
+            log.info('Fetching %s', url)
             try:
                 response = session.get(url, timeout=5)
+                response.raise_for_status()
                 signature[file] = md5(response.content).hexdigest() if response.ok else None
             except Exception:
                 signature[file] = None
