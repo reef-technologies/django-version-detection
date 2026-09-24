@@ -1,45 +1,44 @@
-# Small script to guess django verion of website
+# Django version detection
 
-## Preparations (may be skipped)
+Guess a website's Django version by comparing its admin static files with hashes from Django releases.
 
-Get all available django versions:
-
-```sh
-python get_django_versions.py
-```
-
-This will fetch popular django versions in `tmp` dir and extract static files for admin application:
+## Setup
 
 ```sh
-sh download_static.sh
+uv tool install git+https://github.com/reef-technologies/django-version-detection
 ```
 
-This will generate "signatures" of those static files for each django version, and put them into `signatures.json`:
+## Generate signatures
 
 ```sh
-python generate_signatures.py
+django-version-detection generate
 ```
 
-`signatures.json` already contains some signatures for popular django versions.
+Downloads stable Django releases, hashes their static files, and writes signatures to a local cache.
 
-## Run
+`--min-version` raises that floor. `--signatures-path` is a global option and chooses another file:
 
 ```sh
-python detect.py domain.com
+django-version-detection --signatures-path ./signatures.json generate --min-version 4.2
 ```
-outputs
+
+## Detect
+
+```sh
+django-version-detection detect domain.com
 ```
-https://domain.com/
-3.2 - 98.97%
-3.1 - 77.23%
-3.0 - 1.01%
-2.2 - 1.14%
-2.1 - 1.14%
-2.0 - 1.14%
-1.9 - 3.57%
-1.8 - 0.00%
-1.7 - 0.00%
-1.6 - 0.00%
-1.11 - 3.03%
-1.10 - 3.03%
+
+Probes `https://domain.com/static/` and prints how closely each release matches:
+
+```
+| version | likelihood |
+|---------|------------|
+| 4.2.3   | 91.00%     |
+| 4.2.7   | 98.00%     |
+```
+
+Pass `--static-root` when the site serves those files under another prefix:
+
+```sh
+django-version-detection detect domain.com --static-root /assets
 ```
