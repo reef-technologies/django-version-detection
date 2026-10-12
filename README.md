@@ -42,3 +42,22 @@ Pass `--static-root` when the site serves those files under another prefix:
 ```sh
 django-version-detection detect domain.com --static-root /assets
 ```
+
+## Invocation from python
+
+```python
+import json
+
+from django_version_detection.signatures import DEFAULT_SIGNATURES_PATH, generate_signatures
+from django_version_detection.detect import detect_version, detect_static_root
+
+try:
+    signatures = json.loads(DEFAULT_SIGNATURES_PATH.read_text())
+except FileNotFoundError:
+    signatures = generate_signatures()
+    DEFAULT_SIGNATURES_PATH.write_text(json.dumps(signatures, indent=2))
+
+domain = "example.com"
+static_root = detect_static_root(domain=domain, signatures=signatures)
+versions = detect_version(domain=domain, static_root=static_root, signatures=signatures)
+```

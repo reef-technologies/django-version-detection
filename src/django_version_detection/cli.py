@@ -6,16 +6,14 @@ from pathlib import Path
 from typing import Any
 
 import click
-from platformdirs import user_cache_path
 import structlog
 from tabulate import tabulate
 from natsort import natsorted
 
 from .detect import detect_static_root, detect_version
-from .signatures import RE_DJANGO_VERSION, generate_signatures, Version
+from .signatures import RE_DJANGO_VERSION, generate_signatures, Version, DEFAULT_SIGNATURES_PATH
 
 DEFAULT_MIN_VERSION = "3.0"
-DEFAULT_SIGNATURES_PATH = user_cache_path("django_version_detection") / "signatures.json"
 
 log = structlog.get_logger()
 

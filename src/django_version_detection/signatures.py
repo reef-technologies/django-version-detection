@@ -7,6 +7,7 @@ from hashlib import md5
 from pathlib import Path
 
 from more_itertools import one
+from platformdirs import user_cache_path
 import requests
 import structlog
 from tempfile import TemporaryDirectory
@@ -14,6 +15,7 @@ from tempfile import TemporaryDirectory
 log = structlog.get_logger()
 
 RE_DJANGO_VERSION = re.compile(r"\d+(?:\.\d+)*")
+DEFAULT_SIGNATURES_PATH = user_cache_path("django_version_detection") / "signatures.json"
 
 
 class Version(tuple):
