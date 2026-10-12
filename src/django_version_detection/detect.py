@@ -72,3 +72,10 @@ def detect_version(
         version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
         for version, hashes in signatures.items()
     }
+
+
+def probe_django(domain: str, request_timeout: float = 5) -> bool:
+    url = f"https://{domain}/"
+    log.info("probing", url=url)
+    response = session.get(url, timeout=request_timeout)
+    return "csrftoken" in response.cookies

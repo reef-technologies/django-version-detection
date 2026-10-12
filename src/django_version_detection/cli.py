@@ -10,7 +10,7 @@ import structlog
 from tabulate import tabulate
 from natsort import natsorted
 
-from .detect import detect_static_root, detect_version
+from .detect import detect_static_root, detect_version, probe_django
 from .signatures import RE_DJANGO_VERSION, generate_signatures, Version, DEFAULT_SIGNATURES_PATH
 
 DEFAULT_MIN_VERSION = "3.0"
@@ -83,6 +83,10 @@ def detect(ctx: click.Context, domain: str, static_root: str) -> None:
 
     signatures = json.loads(signatures_path.read_text())
     log.info("loaded signatures", versions=list(signatures.keys()))
+
+    if not probe_django(domain=domain):
+        log.error("django not detected", domain=domain)
+        sys.exit(1)
 
     if not static_root:
         log.info("autodetecting static root")

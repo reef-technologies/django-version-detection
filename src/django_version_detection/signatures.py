@@ -68,16 +68,18 @@ def generate_signatures(min_version: Version = Version(0,)) -> dict[str, dict[st
     log.info("found versions", versions=len(versions))
 
     signatures = defaultdict(dict)
-    with TemporaryDirectory() as downloads_dir:
-        for version in versions:
+    for version in versions:
+        with TemporaryDirectory() as downloads_dir:
             version_dir = Path(downloads_dir) / str(version)
             log.info("downloading", destination=version_dir)
             subprocess.run(
                 [
                     "uv", "pip", "install",
+                    "--exclude-newer", "false",
+                    "--link-mode", "copy",
                     "--no-deps",
                     "--no-managed-python",
-                    "--target", f"{downloads_dir}/{str(version)}",
+                    "--target", str(version_dir),
                     f"Django=={str(version)}",
                 ],
                 check=True,
