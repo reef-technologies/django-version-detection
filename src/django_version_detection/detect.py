@@ -40,7 +40,11 @@ def detect_static_root(
     static_root = "/static"
     for file in to_probe:
         url = f"https://{domain}{static_root}{file}"
-        response = session.head(url, timeout=request_timeout)
+        try:
+            response = session.head(url, timeout=request_timeout)
+        except requests.RequestException as exc:
+            log.warning("probe failed", url=url, error=str(exc))
+            continue
         if response.ok:
             return static_root
 
@@ -62,11 +66,15 @@ def detect_version(
                     continue
                 url = f"https://{domain}{static_root}{file}"
                 log.info("probing", url=url)
-                response = session.get(url, timeout=request_timeout)
-                if response.ok:
-                    observed[file] = md5(response.content).hexdigest()
-                else:
+                try:
+                    response = session.get(url, timeout=request_timeout)
+                except requests.RequestException as exc:
+                    log.warning("probe failed", url=url, error=str(exc))
                     observed[file] = None
+                    continue
+                
+                observed[file] = md5(response.content).hexdigest() if response.ok else None
+                
 
     return {
         version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
@@ -77,5 +85,9 @@ def detect_version(
 def probe_django(domain: str, request_timeout: float = 5) -> bool:
     url = f"https://{domain}/"
     log.info("probing", url=url)
-    response = session.get(url, timeout=request_timeout)
+    try:
+        response = session.get(url, timeout=request_timeout)
+    except requests.RequestException as exc:
+        log.warning("probe failed", url=url, error=str(exc))
+        return False
     return "csrftoken" in response.cookies
