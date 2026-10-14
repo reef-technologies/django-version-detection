@@ -1,4 +1,5 @@
 from collections import defaultdict
+from functools import cache
 from hashlib import md5
 
 import requests
@@ -13,12 +14,20 @@ class StaticRootNotFound(Exception):
     ...
 
 
-def get_files_to_probe(signatures: dict[str, dict[str, str]]) -> list[str]:
+def get_files_to_probe(signatures: dict[str, dict[str, str]]) -> tuple[str, ...]:
+    _signatures = tuple((version, tuple(sorted(hashes.items()))) for version, hashes in signatures.items())
+    return _get_files_to_probe(_signatures)
+
+
+@cache
+def _get_files_to_probe(
+    signatures: tuple[tuple[str, tuple[tuple[str, str], ...]], ...],
+) -> tuple[str, ...]:
     """ Find files which altogether cover all versions. """
 
     file_to_versions = defaultdict(set)
-    for version, hashes in signatures.items():
-        for file in hashes.keys():
+    for version, hashes in signatures:
+        for file, _ in hashes:
             file_to_versions[file].add(version)
 
     to_probe = []
@@ -28,7 +37,7 @@ def get_files_to_probe(signatures: dict[str, dict[str, str]]) -> list[str]:
             to_probe.append(file)
             covered_versions.update(new_covered_versions)
 
-    return to_probe
+    return tuple(to_probe)
 
 
 def detect_static_root(
@@ -45,7 +54,7 @@ def detect_static_root(
         except requests.RequestException as exc:
             log.warning("probe failed", url=url, error=str(exc))
             continue
-        if response.ok:
+        if response.status_code == 200:
             return static_root
 
     raise StaticRootNotFound
@@ -80,10 +89,3 @@ def detect_version(
         version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
         for version, hashes in signatures.items()
     }
-
-
-def probe_django(domain: str, request_timeout: float = 5) -> bool:
-    url = f"https://{domain}/"
-    log.info("probing", url=url)
-    response = session.get(url, timeout=request_timeout)
-    return "csrftoken" in response.cookies
