@@ -85,9 +85,5 @@ def detect_version(
 def probe_django(domain: str, request_timeout: float = 5) -> bool:
     url = f"https://{domain}/"
     log.info("probing", url=url)
-    try:
-        response = session.get(url, timeout=request_timeout)
-    except requests.RequestException as exc:
-        log.warning("probe failed", url=url, error=str(exc))
-        return False
+    response = session.get(url, timeout=request_timeout)
     return "csrftoken" in response.cookies

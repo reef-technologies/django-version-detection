@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 import click
+import requests
 import structlog
 from tabulate import tabulate
 from natsort import natsorted
@@ -84,9 +85,12 @@ def detect(ctx: click.Context, domain: str, static_root: str) -> None:
     signatures = json.loads(signatures_path.read_text())
     log.info("loaded signatures", versions=list(signatures.keys()))
 
-    if not probe_django(domain=domain):
-        log.error("django not detected", domain=domain)
-        sys.exit(1)
+    try:
+        if not probe_django(domain=domain):
+            log.error("django not detected", domain=domain)
+            sys.exit(1)
+    except requests.RequestException as exc:
+        raise click.ClickException(f"Error probing Django: {exc}")
 
     if not static_root:
         log.info("autodetecting static root")
