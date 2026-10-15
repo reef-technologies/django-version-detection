@@ -1,6 +1,8 @@
 from collections import defaultdict
+from contextlib import suppress
 from functools import cache
 from hashlib import md5
+from pathlib import Path
 
 import requests
 import structlog
@@ -8,6 +10,30 @@ from structlog.contextvars import bound_contextvars
 
 log = structlog.get_logger()
 session = requests.Session()
+
+EXPECTED_CONTENT_TYPES = {
+    ".css": {"text/css"},
+    ".js": {
+        "application/javascript",
+        "text/javascript",
+        "application/x-javascript",
+    },
+}
+
+
+class ContentTypeMissing(Exception):
+    ...
+
+
+def content_type_matches(response: requests.Response) -> bool:
+    try:
+        content_type = response.headers["Content-Type"]
+    except KeyError as exc:
+        raise ContentTypeMissing from exc
+
+    media_type = content_type.split(";", 1)[0].strip().lower()
+    suffix = Path(response.request.url).suffix.lower()
+    return media_type in EXPECTED_CONTENT_TYPES[suffix]
 
 
 class StaticRootNotFound(Exception):
@@ -49,14 +75,18 @@ def detect_static_root(
     static_root = "/static"
     for file in to_probe:
         url = f"https://{domain}{static_root}{file}"
-        try:
-            response = session.head(url, timeout=request_timeout)
-        except requests.RequestException as exc:
-            log.warning("probe failed", url=url, error=str(exc))
-            continue
-        if response.status_code == 200:
-            return static_root
-
+        with bound_contextvars(url=url):
+            try:
+                response = session.head(url, timeout=request_timeout)
+            except requests.RequestException as exc:
+                log.warning("probe failed", error=str(exc))
+                continue
+            if response.status_code == 200:
+                with suppress(ContentTypeMissing):
+                    if not content_type_matches(response):
+                        log.warning("unexpected content type")
+                        continue
+                return static_root
     raise StaticRootNotFound
 
 
@@ -82,8 +112,16 @@ def detect_version(
                     observed[file] = None
                     continue
                 
-                observed[file] = md5(response.content).hexdigest() if response.ok else None
-                
+                if response.ok:
+                    with suppress(ContentTypeMissing):
+                        if not content_type_matches(response):
+                            log.warning("unexpected content type")
+                            observed[file] = None
+                            continue
+                    observed[file] = md5(response.content).hexdigest()
+                    continue
+
+                observed[file] = None
 
     return {
         version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
