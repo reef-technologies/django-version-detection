@@ -5,6 +5,7 @@ description = "Guess a website's Django version from admin static file signature
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "beautifulsoup4>=4.15.0",
     "click",
     "more-itertools>=11.1.0",
     "natsort>=8.4.0",

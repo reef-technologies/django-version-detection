@@ -1,11 +1,14 @@
+import re
 from collections import defaultdict
 from contextlib import suppress
 from functools import cache
 from hashlib import md5
 from pathlib import Path
+from urllib.parse import urljoin, urlsplit
 
 import requests
 import structlog
+from bs4 import BeautifulSoup
 from structlog.contextvars import bound_contextvars
 
 log = structlog.get_logger()
@@ -66,11 +69,42 @@ def _get_files_to_probe(
     return tuple(to_probe)
 
 
+def extract_root_from_admin_asset(url: str) -> str | None:
+    with suppress(ValueError):
+        pre_admin, _ = re.split(r"admin/(?:css|js)/", url, maxsplit=1, flags=re.IGNORECASE)
+        return pre_admin.rstrip("/")
+
+
+def get_static_root_from_admin_page(domain: str, request_timeout: float = 5) -> str:
+    response = session.get(f"https://{domain}/admin/login/", timeout=request_timeout)
+    response.raise_for_status()
+    soup = BeautifulSoup(response.text, "html.parser")
+    counts: dict[str, int] = defaultdict(int)
+    for tag in soup.find_all(True):
+        for attr in ("href", "src"):
+            link = tag.get(attr)
+            if not isinstance(link, str):
+                continue
+
+            if root := extract_root_from_admin_asset(urljoin(response.url, link)):
+                counts[root] += 1
+
+    if not counts:
+        raise StaticRootNotFound(response.url)
+
+    return max(counts, key=lambda root: counts[root])
+
+
 def detect_static_root(
     domain: str,
     signatures: dict[str, dict[str, str]],
     request_timeout: float = 5,
 ) -> str:
+    try:
+        return get_static_root_from_admin_page(domain, request_timeout=request_timeout)
+    except (requests.RequestException, StaticRootNotFound) as exc:
+        log.warning("admin page did not reveal static root", error=str(exc))
+
     to_probe = get_files_to_probe(signatures)
     static_root = "/static"
     for file in to_probe:
@@ -86,7 +120,9 @@ def detect_static_root(
                     if not content_type_matches(response):
                         log.warning("unexpected content type")
                         continue
+                log.info("static root found", url=url)
                 return static_root
+
     raise StaticRootNotFound
 
 
@@ -103,7 +139,8 @@ def detect_version(
             for file in hashes:
                 if file in observed:
                     continue
-                url = f"https://{domain}{static_root}{file}"
+
+                url = f"{static_root}{file}" if urlsplit(static_root).scheme else f"https://{domain}{static_root}{file}"
                 log.info("probing", url=url)
                 try:
                     response = session.get(url, timeout=request_timeout)
@@ -111,17 +148,18 @@ def detect_version(
                     log.warning("probe failed", url=url, error=str(exc))
                     observed[file] = None
                     continue
-                
-                if response.ok:
-                    with suppress(ContentTypeMissing):
-                        if not content_type_matches(response):
-                            log.warning("unexpected content type")
-                            observed[file] = None
-                            continue
-                    observed[file] = md5(response.content).hexdigest()
+
+                if not response.ok:
+                    observed[file] = None
                     continue
 
-                observed[file] = None
+                with suppress(ContentTypeMissing):
+                    if not content_type_matches(response):
+                        log.warning("unexpected content type")
+                        observed[file] = None
+                        continue
+
+                observed[file] = md5(response.content).hexdigest()
 
     return {
         version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
