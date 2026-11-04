@@ -61,7 +61,7 @@ def cli(ctx: click.Context, signatures_path: Path) -> None:
     help="Ignore Django releases older than this",
 )
 @click.pass_obj
-def generate(obj: dict[str, Any], min_version: Version) -> None:
+def update(obj: dict[str, Any], min_version: Version) -> None:
     """ Download Django releases and write signatures. """
     signatures_path = obj["signatures_path"]
     signatures = generate_signatures(min_version=min_version)

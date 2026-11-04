@@ -8,10 +8,10 @@ Guess a website's Django version by comparing its admin static files with hashes
 uv tool install git+https://github.com/reef-technologies/django-version-detection
 ```
 
-## Generate signatures
+## Update signatures
 
 ```sh
-django-version-detection generate
+django-version update
 ```
 
 Downloads stable Django releases, hashes their static files, and writes signatures to a local cache.
@@ -19,13 +19,13 @@ Downloads stable Django releases, hashes their static files, and writes signatur
 `--min-version` raises that floor. `--signatures-path` is a global option and chooses another file:
 
 ```sh
-django-version-detection --signatures-path ./signatures.json generate --min-version 4.2
+django-version --signatures-path ./signatures.json update --min-version 4.2
 ```
 
 ## Detect
 
 ```sh
-django-version-detection detect domain.com
+django-version detect domain.com
 ```
 
 Probes `https://domain.com/static/` and prints how closely each release matches:
@@ -40,7 +40,7 @@ Probes `https://domain.com/static/` and prints how closely each release matches:
 Pass `--static-root` when the site serves those files under another prefix:
 
 ```sh
-django-version-detection detect domain.com --static-root /assets
+django-version detect domain.com --static-root /assets
 ```
 
 ## Invocation from python

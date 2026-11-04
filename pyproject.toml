@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-django-version-detection = "django_version_detection.cli:cli"
+django-version = "django_version_detection.cli:cli"
 
 [build-system]
 requires = ["hatchling"]
