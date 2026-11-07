@@ -87,13 +87,6 @@ class Page:
         assert re.match(r"^https?://", self.url), f"Invalid URL: {self.url}"
 
     @property
-    def exists(self) -> bool:
-        with suppress(requests.RequestException):
-            self.content
-            return True
-        return False
-
-    @property
     def content(self) -> str:
         return fetch(self.url)
 
@@ -130,12 +123,11 @@ class Detector:
 
     def is_django(self) -> bool | None:
         for page in self.iter_pages_to_probe():
-            if not page.exists:
-                continue
-            if page.has_django_signs():
-                return True
-            if page.has_wordpress_signs():
-                return False
+            with suppress(requests.RequestException):
+                if page.has_django_signs():
+                    return True
+                if page.has_wordpress_signs():
+                    return False
 
     @classmethod
     def _extract_static_root_from_link(cls, link: str) -> str:
