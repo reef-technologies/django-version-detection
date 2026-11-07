@@ -1,3 +1,6 @@
+from collections.abc import Iterator
+from dataclasses import dataclass
+from itertools import product
 import re
 from collections import defaultdict
 from contextlib import suppress
@@ -69,99 +72,143 @@ def _get_files_to_probe(
     return tuple(to_probe)
 
 
-def extract_root_from_admin_asset(url: str) -> str | None:
-    with suppress(ValueError):
-        pre_admin, _ = re.split(r"admin/(?:css|js)/", url, maxsplit=1, flags=re.IGNORECASE)
-        return pre_admin.rstrip("/")
-
-
-def get_static_root_from_admin_page(domain: str, request_timeout: float = 5) -> str:
-    response = session.get(f"https://{domain}/admin/login/", timeout=request_timeout)
+@cache
+def fetch(url: str) -> str:
+    response = session.get(url, timeout=5)
     response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-    counts: dict[str, int] = defaultdict(int)
-    for tag in soup.find_all(True):
-        for attr in ("href", "src"):
-            link = tag.get(attr)
-            if not isinstance(link, str):
-                continue
-
-            if root := extract_root_from_admin_asset(urljoin(response.url, link)):
-                counts[root] += 1
-
-    if not counts:
-        raise StaticRootNotFound(response.url)
-
-    return max(counts, key=lambda root: counts[root])
+    return response.text
 
 
-def detect_static_root(
-    domain: str,
-    signatures: dict[str, dict[str, str]],
-    request_timeout: float = 5,
-) -> str:
-    try:
-        return get_static_root_from_admin_page(domain, request_timeout=request_timeout)
-    except (requests.RequestException, StaticRootNotFound) as exc:
-        log.warning("admin page did not reveal static root", error=str(exc))
+@dataclass
+class Page:
+    url: str
 
-    to_probe = get_files_to_probe(signatures)
-    static_root = "/static"
-    for file in to_probe:
-        url = f"https://{domain}{static_root}{file}"
-        with bound_contextvars(url=url):
-            try:
-                response = session.head(url, timeout=request_timeout)
-            except requests.RequestException as exc:
-                log.warning("probe failed", error=str(exc))
-                continue
-            if response.status_code == 200:
-                with suppress(ContentTypeMissing):
-                    if not content_type_matches(response):
-                        log.warning("unexpected content type")
-                        continue
-                log.info("static root found", url=url)
-                return static_root
+    def __post_init__(self) -> None:
+        assert re.match(r"^https?://", self.url), f"Invalid URL: {self.url}"
 
-    raise StaticRootNotFound
+    @property
+    def exists(self) -> bool:
+        with suppress(requests.RequestException):
+            self.content
+            return True
+        return False
 
+    @property
+    def content(self) -> str:
+        return fetch(self.url)
 
-def detect_version(
-    domain: str,
-    static_root: str,
-    signatures: dict[str, dict[str, str]],
-    request_timeout: float = 5,
-) -> dict[str, float]:
-    with bound_contextvars(domain=domain, static_root=static_root):
-        log.info("searching static files")
-        observed: dict[str, str | None] = {}
-        for _, hashes in signatures.items():
-            for file in hashes:
-                if file in observed:
+    def has_django_signs(self) -> bool:
+        return "csrfmiddlewaretoken" in self.content
+
+    def has_wordpress_signs(self) -> bool:
+        return bool(re.search(r"\bwp-", self.content))
+
+    def iter_links(self) -> Iterator[str]:
+        soup = BeautifulSoup(self.content, "html.parser")
+        for tag in soup.find_all(True):
+            for attr in ("href", "src"):
+                link = tag.get(attr)
+                if not isinstance(link, str):
                     continue
+                yield urljoin(self.url, link)
 
-                url = f"{static_root}{file}" if urlsplit(static_root).scheme else f"https://{domain}{static_root}{file}"
-                log.info("probing", url=url)
+
+@dataclass
+class Detector:
+    domain: str
+    signatures: dict[str, dict[str, str]]
+
+    def __post_init__(self) -> None:
+        if re.match(r"^https?://", self.domain):
+            self.domain = urlsplit(self.domain).netloc
+
+    def iter_pages_to_probe(self) -> Iterator[Page]:
+        yield Page(url=f"https://{self.domain}/")
+        yield Page(url=f"https://{self.domain}/admin/login/")
+        yield Page(url=f"https://{self.domain}/accounts/login/")
+        yield Page(url=f"https://{self.domain}/account/login/")
+
+    def is_django(self) -> bool | None:
+        for page in self.iter_pages_to_probe():
+            if not page.exists:
+                continue
+            if page.has_django_signs():
+                return True
+            if page.has_wordpress_signs():
+                return False
+
+    @classmethod
+    def _extract_static_root_from_link(cls, link: str) -> str:
+        with suppress(ValueError):
+            static_root, _ = re.split(r"/admin/(?:css|js)/", link, maxsplit=1, flags=re.IGNORECASE)
+            return static_root
+
+        with suppress(ValueError):
+            static_root, separator, _ = re.split(r"(/static)/", link, maxsplit=1, flags=re.IGNORECASE)
+            return static_root + separator
+
+        raise StaticRootNotFound(link)
+
+    def get_static_root(self) -> str:
+        possible_static_roots = {f"https://{self.domain}/static"}
+
+        for page in self.iter_pages_to_probe():
+            with suppress(requests.RequestException):
+                for link in page.iter_links():
+                    with suppress(StaticRootNotFound):
+                        possible_static_roots.add(self._extract_static_root_from_link(link))
+
+        # TODO: probe manifest static files
+        files_to_probe = get_files_to_probe(self.signatures)
+        for static_root, file in product(possible_static_roots, files_to_probe):
+            url = f"{static_root}{file}"
+            with bound_contextvars(url=url):
                 try:
-                    response = session.get(url, timeout=request_timeout)
+                    response = session.head(url, timeout=5)
                 except requests.RequestException as exc:
-                    log.warning("probe failed", url=url, error=str(exc))
-                    observed[file] = None
+                    log.warning("probe failed", error=str(exc))
                     continue
+                if response.status_code == 200:
+                    with suppress(ContentTypeMissing):
+                        if not content_type_matches(response):
+                            log.warning("unexpected content type")
+                            continue
+                    log.info("static root found", url=url)
+                    return static_root
 
-                if not response.ok:
-                    observed[file] = None
-                    continue
+        raise StaticRootNotFound(self.domain)
 
-                with suppress(ContentTypeMissing):
-                    if not content_type_matches(response):
-                        log.warning("unexpected content type")
+    def detect_version(self, static_root: str) -> dict[str, float]:
+        with bound_contextvars(domain=self.domain, static_root=static_root):
+            log.info("searching static files")
+            observed: dict[str, str | None] = {}
+            for _, hashes in self.signatures.items():
+                for file in hashes:
+                    if file in observed:
+                        continue
+
+                    url = f"{static_root}{file}" if urlsplit(static_root).scheme else f"https://{self.domain}{static_root}{file}"
+                    log.info("probing", url=url)
+                    try:
+                        response = session.get(url, timeout=5)
+                    except requests.RequestException as exc:
+                        log.warning("probe failed", url=url, error=str(exc))
                         observed[file] = None
                         continue
 
-                observed[file] = md5(response.content).hexdigest()
+                    if not response.ok:
+                        observed[file] = None
+                        continue
 
-    return {
-        version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
-        for version, hashes in signatures.items()
-    }
+                    with suppress(ContentTypeMissing):
+                        if not content_type_matches(response):
+                            log.warning("unexpected content type")
+                            observed[file] = None
+                            continue
+
+                    observed[file] = md5(response.content).hexdigest()
+
+        return {
+            version: round(len(set(observed.items()) & set(hashes.items())) / len(hashes), 2)
+            for version, hashes in self.signatures.items()
+        }

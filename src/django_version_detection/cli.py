@@ -10,7 +10,7 @@ import structlog
 from tabulate import tabulate
 from natsort import natsorted
 
-from .detect import detect_static_root, detect_version
+from .detect import Detector, StaticRootNotFound
 from .signatures import RE_DJANGO_VERSION, generate_signatures, Version, DEFAULT_SIGNATURES_PATH
 
 DEFAULT_MIN_VERSION = "3.0"
@@ -79,17 +79,32 @@ def detect(ctx: click.Context, domain: str, static_root: str) -> None:
     signatures_path: Path = ctx.obj["signatures_path"]
     if not signatures_path.exists():
         log.info("signatures file not found, generating")
-        ctx.invoke(generate)
+        ctx.invoke(update)
 
     signatures = json.loads(signatures_path.read_text())
     log.info("loaded signatures", versions=list(signatures.keys()))
 
+    detector = Detector(domain=domain, signatures=signatures)
+
+    match detector.is_django():
+        case True:
+            log.info("django signs found")
+        case False:
+            log.info("definitely not django")
+            return
+        case _:
+            log.warning("could not determine whether the website is django or not")
+
     if not static_root:
         log.info("autodetecting static root")
-        static_root = detect_static_root(domain=domain, signatures=signatures)
+        try:
+            static_root = detector.get_static_root()
+        except StaticRootNotFound:
+            log.warning("static root not found")
+            return
 
     log.info("scanning", domain=domain)
-    versions = detect_version(domain=domain, static_root=static_root, signatures=signatures)
+    versions = detector.detect_version(static_root=static_root)
     click.echo(tabulate(
         [(version, f"{likelihood * 100:.2f}%") for version, likelihood in natsorted(versions.items(), key=itemgetter(0))],
         headers=["version", "likelihood"],
