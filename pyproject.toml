@@ -21,3 +21,8 @@ django-version = "django_version_detection.cli:cli"
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.uv]
+required-version = ">=0.13.4"
+constraint-dependencies = ["certifi>=2026.10.19"]
+exclude-newer-package = { certifi = false }
